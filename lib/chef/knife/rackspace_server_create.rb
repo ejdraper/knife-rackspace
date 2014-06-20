@@ -225,6 +225,12 @@ class Chef
         :description => "A file containing the secret key to use to encrypt data bag item values",
         :proc => Proc.new { |sf| Chef::Config[:knife][:secret_file] = sf }
 
+      option :solo,
+        :long => "--[no-]solo",
+        :description => "Whether to use knife-solo or not",
+        :boolean => true,
+        :default => false
+
       def load_winrm_deps
         require 'winrm'
         require 'em-winrm'
@@ -420,18 +426,23 @@ class Chef
           exit 1
         end
 
-      if locate_config_value(:bootstrap_protocol) == 'winrm'
-        print "\n#{ui.color("Waiting for winrm", :magenta)}"
-        print(".") until tcp_test_winrm(bootstrap_ip_address, locate_config_value(:winrm_port))
-        bootstrap_for_windows_node(server, bootstrap_ip_address).run
-      else
-        print "\n#{ui.color("Waiting for sshd", :magenta)}"
-        print(".") until tcp_test_ssh(bootstrap_ip_address) {
-          sleep @initial_sleep_delay ||= 10
-          puts("done")
-        }
-        bootstrap_for_node(server, bootstrap_ip_address).run
-      end
+        if config[:solo]
+          require 'knife-solo/tools'
+          require 'chef/knife/bootstrap_solo'
+        end
+
+        if locate_config_value(:bootstrap_protocol) == 'winrm'
+          print "\n#{ui.color("Waiting for winrm", :magenta)}"
+          print(".") until tcp_test_winrm(bootstrap_ip_address, locate_config_value(:winrm_port))
+          bootstrap_for_windows_node(server, bootstrap_ip_address).run
+        else
+          print "\n#{ui.color("Waiting for sshd", :magenta)}"
+          print(".") until tcp_test_ssh(bootstrap_ip_address) {
+            sleep @initial_sleep_delay ||= 10
+            puts("done")
+          }
+          bootstrap_for_node(server, bootstrap_ip_address).run
+        end
 
         puts "\n"
         msg_pair("Instance ID", server.id)
@@ -473,6 +484,7 @@ class Chef
         # bootstrap will run as root...sudo (by default) also messes up Ohai on CentOS boxes
         bootstrap.config[:use_sudo] = true unless config[:ssh_user] == 'root'
         bootstrap.config[:distro] = locate_config_value(:distro)  || 'chef-full'
+        bootstrap.config[:solo] = config[:solo]
         bootstrap_common_params(bootstrap, server)
       end
 
